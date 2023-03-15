@@ -1,0 +1,95 @@
+---
+title: "Assignment-6"
+author: "Xu Jingfan"
+date: "2021/11/21"
+StudentID: '2019010406'
+documentclass: ctexart
+output:
+  pdf_document:
+    latex_engine: xelatex
+    keep_tex: yes
+---
+
+This is an assignment for Introduction to Data Science. In this assignment, use R to unpack it to get 20 PubMedXML files. Count all the MeshHeading in them and get the most high frequency 3000 MeshHeading.
+
+Consider the most high frequency 3000 MeshHeading as a dictionary and ignore other words. To reduce processing time, only one file, pubmed20n1220.xml, is used. Similar to the method of latent semantic analysis of "prescription.txt" in class, we obtain the term-document matrix of MeshHeading in the dictionary, and then obtain the 10-dimensional embedding vector of each MeshHeading's 10-dimensional embedding vector. 
+
+construct the function cosv(a, B), where a is an embedding vector and B is a matrix composed of embedding vectors as columns. The function returns the cosine of the angle between a and each column of B. Using the vector, matrix multiplication rules of R, this function requires only one line of R code. Using this function, the 10 MeshHeading most relevant to Coronavirus are obtained.
+
+# Problem 1
+
+```{r}
+rm(list=ls())
+
+library(rvest)
+library(xml2)
+
+# unzip the file
+untar("pubmed.tar.gz")
+
+# read all the documents
+MeshHeading=c()
+for (i in 1:9){
+con=paste("pubmed20n120",i,".xml",sep="")
+page=read_xml(x=con)
+MeshHeading=append(MeshHeading,html_elements(page,"DescriptorName")%>%html_text())
+}
+for (i in 10:20){
+con=paste("pubmed20n12",i,".xml",sep="")
+page=read_xml(x=con)
+MeshHeading=append(MeshHeading,html_elements(page,"DescriptorName")%>%html_text())
+}
+
+# Count appearance of MeshHeading 
+result=as.data.frame(table(MeshHeading))
+result=result[order(result$Freq,decreasing = T,method = "auto"),]
+
+# save the first 3000
+TopMeshHeading=result[1:3000,]
+row.names(TopMeshHeading)=c(1:3000)
+
+# remove variables to save memory
+remove(result)
+remove(MeshHeading)
+print(TopMeshHeading[1:10,])
+```
+
+# Problem 2
+
+```{r}
+page=read_xml("pubmed20n1220.xml")
+# extract all the MeshHeading
+MHL20=page%>%html_elements("MeshHeadingList")3
+MH20=sapply(MHL20,
+function(x){html_elements(x,"MeshHeading DescriptorName")%>%html_text()})
+
+# fill in the term-document matrix
+tmp = rep(0, 3000)
+names(tmp) = TopMeshHeading$MeshHeading
+m = sapply(MH20,
+function(x) {y = tmp; y[x] = 1;
+return(y[1:3000])})
+
+# svd and take the first 10 components
+decomp = svd(m)
+embd = t(decomp$u[,1:10])
+colnames(embd) = rownames(m)
+embd[1:10,1:10]
+```
+
+# Problem 3
+
+```{r}
+# cosv function
+cosv <- function(a,B){
+  apply(B,MARGIN =2,
+  FUN = function(x){return(x%*%a/sqrt(a%*%a)/sqrt(x%*%x))})
+} 
+
+# Calculate the distance between coronavirus and each column of embd
+res=cosv(embd[,294],embd)
+res=res[order(res,decreasing = T)]
+# print 10 most similar words with coronavirus
+print(res[2:11])
+```
+
