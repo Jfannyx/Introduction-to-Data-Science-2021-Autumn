@@ -1,0 +1,158 @@
+---
+title: "Assignment-6"
+author: "Xu Jingfan"
+date: "2021/11/21"
+StudentID: '2019010406'
+documentclass: ctexart
+output:
+  pdf_document:
+    latex_engine: xelatex
+    keep_tex: yes
+---
+
+This is an assignment for Introduction to Data Science. In this assignment, use the 20 PubMedXML files in pubmed.tar.gz to obtain the abstracts of all Humans and Animals articles according to MeshHeading to form a binary dataset for building the NaïveBayes text classifier. 
+Lowercase the text data and slice each summary into a word vector, taking care to remove punctuation, numbers, etc. and keep only words. Words that occur 5 times or more in the corpus are retained to form a lexicon. 
+
+Count the conditional probability (with Laplace smoothing) of each word for each classification on the training set. 
+
+Build a NaïveBayes text classifier. Test the classification accuracy (accuracy) on the test set.
+
+```{r message=FALSE}
+rm(list=ls())
+library(xml2)
+library(rvest)
+library(tidyr)
+library(dplyr)
+library(stringr)
+```
+
+```{r}
+AbstractA=c() # to store the articles about animal
+AbstractH=c() # to store the articles about human
+for(i in 1201:1220){
+  data <- read_xml(paste("pubmed20n",i,".xml",sep=""))
+  Article <- data%>%html_elements("PubmedArticle")
+  MeshHeading <- html_element(Article,"MeshHeadingList")%>%html_text()
+  MeshHeading[is.na(MeshHeading)] <- 0
+  
+  # extract the abstract of the two kinds of the articles
+  AbstractA <- c(AbstractA,
+              html_element(Article[str_detect(MeshHeading,"Animals")],
+                           "Abstract")%>%html_text(trim=T))
+  AbstractH <- c(AbstractH,
+              html_element(Article[str_detect(MeshHeading,"Humans")],
+                           "Abstract")%>%html_text(trim=T))
+}
+
+TextProcess <- function(x) {
+  # function to lowercase and delete punctuation
+  x=tolower(x);
+  x=str_remove_all(x,"[^a-z]")
+  x=str_remove_all(x,"\\h[a-z]\\h")
+}
+
+# delete the original data to reduce memory
+remove(data)
+remove(Article)
+
+# delete NA abstract
+AbstractA[which(AbstractA=="")]=NA
+AbstractH[which(AbstractH=="")]=NA
+
+AbstractA1=na.omit(AbstractA)
+AbstractH1=na.omit(AbstractH)
+
+# lowercase, delete punctuation
+AbstractA1=sapply(AbstractA1,TextProcess)
+AbstractH1=sapply(AbstractH1,TextProcess)
+
+# assign test dataset and train dataset
+my.assign=sample(c(1:length(AbstractA1)),
+                 0.8*length(AbstractA1))
+TrainSetA=AbstractA1[my.assign]
+TestSetA=AbstractA1[-my.assign]
+
+my.assign=sample(c(1:length(AbstractH1)),
+                 0.8*length(AbstractH1))
+TrainSetH=AbstractH1[my.assign]
+TestSetH=AbstractH1[-my.assign]
+
+
+# split the train dataset and build a dictionary
+TrainSetA1=unlist(na.omit(str_split(TrainSetA,"\\h")))
+TrainSetA1[which(TrainSetA1=="")]=NA
+TrainSetA1=na.omit(TrainSetA1)
+A=table(TrainSetA1)
+dicA=A[A>=5]
+dicA=dicA[-1] # dictionary for animal articles
+
+TrainSetH1=unlist(str_split(TrainSetH,"\\h"))
+TrainSetH1[which(TrainSetH1=="")]=NA
+TrainSetH1=na.omit(TrainSetH1)
+H=table(TrainSetH1)
+dicH=H[H>=5] 
+dicH=dicH[-1] # dictionary for human articles
+
+# calculate the probability 
+# that each word in the dictionary appears in the abstract 
+A1=sapply(dicA,function(x)((x+1)/(length(TrainSetA1)+x)))
+H1=sapply(dicH,function(x)((x+1)/(length(TrainSetH1)+x)))
+
+# Calculate P(W|k1)
+TestA <- function(x){
+  z <- unlist(str_split(x,"\\h"))
+  z[which(z=="")] <- NA
+  z[which(z==" ")] <- NA
+  z <- na.omit(z)
+  
+  y <- table(z)
+  y <- na.omit(z)
+  y <- sapply(y,function(x) x=1/length(x))
+  
+  y[names(A1)] <- A1
+  
+  l <- length(y)
+  p <- 1
+  for (i in l)
+    p <- p*y[i]
+  return (p*length(AbstractA)/(length(AbstractA)+length(AbstractH)))
+}
+
+# Calculate p(W|k2)
+TestH <- function(x){
+  z <- unlist(str_split(x,"\\h"))
+  z[which(z=="")] <- NA
+  z <- na.omit(z)
+  
+  y <- table(z)
+  y <- sapply(y,function(x) x=1/length(x))
+  y[names(H1)] <- H1
+  
+  l <- length(y)
+  p <- 1
+  
+  for (i in l)
+    p <- p*y[i]
+  return (p*length(AbstractH)/(length(AbstractA)+length(AbstractH)))
+}
+
+# Calculate the probability that each of the test set belongs to the 
+# animals and humans articles 
+
+# test set A
+ProbA <- sapply(TestSetA, TestA)
+ProbH <- sapply(TestSetA, TestH)
+Prob <- ProbA-ProbH
+
+# test set H
+ProbA <- sapply(TestSetH,TestA)
+ProbH <- sapply(TestSetH,TestH)
+Prob <- append(Prob,ProbH-ProbA)
+
+# for test set A, probA should be greater than probH
+Accuracy <- sapply(Prob,function(x){if(x>0){x=1}else{x=0}})
+Accuracy <- mean(Accuracy)
+Accuracy # accuracy of the bayesian classifier
+
+```
+
